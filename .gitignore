@@ -1,0 +1,9 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Never commit personal training data
+*backup*.json
+gymlog-*.json
