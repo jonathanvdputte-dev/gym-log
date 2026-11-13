@@ -11,8 +11,12 @@ A small installable web app (PWA) for logging a 3-day in-season gym program: set
 
 ## Your data
 - Everything you log stays **on your phone** (browser storage). Nothing is sent to a server, and nothing is stored in this repository.
-- Use **Plan → Backup → Export backup** now and then. Import the file on a new phone with **Import backup**.
+- **Plan → Backup → Back up now** opens Android's share menu, so you can save the backup to Google Drive or send it to yourself. The app reminds you when your last backup is 2 weeks old.
+- Import a backup on a new phone with **Import backup**.
 - Clearing the browser's site data for this page deletes the log, so keep a recent backup.
+
+## Rest timer with the screen locked
+Allow notifications when the app asks. When you lock your phone during a rest, a notification shows when your next set is due. When the rest is over you get a vibrating alert if Android keeps the app running; otherwise the alert comes as soon as you unlock.
 
 ## Files
 | File | What it does |

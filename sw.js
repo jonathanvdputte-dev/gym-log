@@ -1,5 +1,5 @@
 // Gym Log service worker: works offline, picks up new versions on the next open.
-const CACHE = "gymlog-v1";
+const CACHE = "gymlog-v2";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -23,4 +23,13 @@ self.addEventListener("fetch", e => {
     if (r.ok || r.type === "opaque") { const c = r.clone(); caches.open(CACHE).then(x => x.put(req, c)); }
     return r;
   }).catch(() => hit)));
+});
+
+// Tapping a rest-timer notification opens the app again.
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+    for (const c of list) { if ("focus" in c) return c.focus(); }
+    return self.clients.openWindow("./");
+  }));
 });

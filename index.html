@@ -221,6 +221,10 @@ details.pday>summary{padding:12px 14px;font-family:var(--display);font-weight:70
 .rest b{font-family:var(--mono);font-size:1.45rem;font-variant-numeric:tabular-nums}
 .rest .bar{height:3px;border-radius:2px;background:currentColor;opacity:.5;margin-top:3px;transform-origin:left}
 .rest button{border:1px solid currentColor;background:none;color:inherit;border-radius:8px;padding:6px 10px;font-size:.82rem}
+.n.pr{font-family:var(--mono);font-size:.62rem;font-weight:700;color:var(--ball-ink);background:var(--ball);border-radius:5px;padding:2px 0}
+.prtag{font-family:var(--mono);font-size:.65rem;font-weight:700;color:var(--ball-ink);background:var(--ball);border-radius:5px;padding:1px 5px;margin-left:4px}
+.banner.backup{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--warn-soft);color:var(--warn)}
+.banner.backup button{flex:0 0 auto;border:1px solid currentColor;background:none;color:inherit;border-radius:8px;padding:6px 10px;font-size:.84rem;font-weight:600}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(78px + env(safe-area-inset-bottom,0px));z-index:7;background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:999px;font-size:.88rem}
 @media (prefers-reduced-motion:no-preference){.chk,.tick,.ex{transition:background-color .15s,border-color .15s}}
 </style>
@@ -538,6 +542,26 @@ function whoopText(s){
   if(s.notes)t+=`\nNotes: ${s.notes}\n`;
   return t;
 }
+async function shareText(text,host){
+  if(navigator.share){try{await navigator.share({title:"Gym session",text});return}catch(e){if(e&&e.name==="AbortError")return}}
+  copyText(text,host);
+}
+/* Personal records: compared with every earlier session */
+function prFor(k,w,r,before,excludeId){
+  if(w==null||r==null)return null;
+  let maxW=null,repsAt=null,any=false;
+  sessions.forEach(s=>{if(s.id===excludeId||s.startedAt>=before)return;const e=s.log&&s.log[k];if(!e||!e.sets)return;
+    e.sets.forEach(x=>{if(!x.d||x.w==null||x.r==null)return;any=true;if(maxW==null||x.w>maxW)maxW=x.w;if(x.w>=w&&(repsAt==null||x.r>repsAt))repsAt=x.r})});
+  if(!any)return null;
+  if(w>maxW)return "weight";
+  if(repsAt==null||r>repsAt)return "reps";
+  return null;
+}
+function sessionPRs(s){
+  const out=new Set();
+  Object.entries(s.log||{}).forEach(([k,e])=>{if(!e.sets||(EX[k]&&EX[k].ty!=="s"))return;e.sets.forEach(x=>{if(x.d&&prFor(k,x.w,x.r,s.startedAt,s.id))out.add(k)})});
+  return out;
+}
 async function copyText(text,host){
   try{await navigator.clipboard.writeText(text);toast("Copied. Paste it into Whoop.");return}
   catch(e){
@@ -562,6 +586,8 @@ function renderTrain(){
   const p=PROGRAM[day]; const s=active[day]; const st=s?sessionStats(s):null; const wk=cycleWeek();
   let h=`<div class="shead"><div><div class="meta">${esc(p.when)} · Week ${wk} of 4</div><h2>${esc(p.title)}</h2></div>
     ${s?`<span class="pill live" id="donepill">${st.sets} sets done</span>`:`<span class="pill" id="donepill">Not started</span>`}</div>`;
+  const bk=backupAge();
+  if(sessions.size&&(bk==null||bk>=14))h+=`<div class="banner backup"><span>${bk==null?"No backup yet.":"Last backup "+bk+" days ago."} Your log only lives on this phone.</span><button type="button" id="backupNow">Back up</button></div>`;
   if(wk===4)h+=`<div class="banner deload"><b>Deload week.</b> Sets are cut by a third. Keep the weights, keep power work at full intent.</div>`;
   p.blocks.forEach(b=>{
     h+=`<div class="block"><h3>${esc(b.name)}${b.note?`<small>${esc(b.note)}</small>`:""}</h3>`;
@@ -584,7 +610,7 @@ function renderTrain(){
 }
 function finishHtml(s,p){
   if(s&&s.finishedAt)return `<p class="hint">Finished at ${new Date(s.finishedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}. Edits still save.</p>
-    <button class="btn" type="button" id="copyNow">Copy for Whoop</button>
+    <button class="btn" type="button" id="copyNow">Share to Whoop</button>
     <button class="btn ghost" type="button" id="reopen">Start a fresh ${esc(p.label)} session</button>`;
   if(s&&finishCheck){const m=missingItems(s);
     if(m.length)return `<div class="missing"><p>${m.length} not logged yet</p><ul>${m.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
@@ -613,7 +639,8 @@ function exCard(it,s){
     }else{
       const wph=sg?fmt(sg.w):(ref&&ref.w!=null?fmt(ref.w):(it.bw?"BW":""));
       const rph=sg&&sg.dir!=="same"?fmt(sg.dir==="up"?it.rmin:it.rmax):(ref&&ref.r!=null?fmt(ref.r):(it.rmax?fmt(it.rmax):""));
-      h+=`<div class="set${x.d?" isdone":""}"><span class="n">${i+1}</span>
+      const pr=x.d&&prFor(it.k,x.w,x.r,s?s.startedAt:Date.now(),s&&s.id);
+      h+=`<div class="set${x.d?" isdone":""}"><span class="n${pr?" pr":""}">${pr?"PR":i+1}</span>
         <label class="fld"><input id="${id}-w" data-k="${it.k}" data-i="${i}" data-f="w" type="number" inputmode="decimal" step="0.5" value="${fmt(x.w)}" placeholder="${wph}" aria-label="Set ${i+1} weight"><i>kg</i></label>
         <span class="x">×</span>
         <label class="fld"><input id="${id}-r" data-k="${it.k}" data-i="${i}" data-f="r" type="number" inputmode="numeric" step="1" value="${fmt(x.r)}" placeholder="${rph}" aria-label="Set ${i+1} reps"><i>reps</i></label>
@@ -643,11 +670,11 @@ function renderHistory(){
   h+=`<div class="hlist">`+list.map(s=>{
     const st=sessionStats(s); const d=new Date(s.startedAt); const p=PROGRAM[s.day]||DEFAULT[s.day]||{label:"Session",title:""};
     const open=openHist===s.id; let det="";
-    if(open){
+    if(open){const prs=sessionPRs(s);
       det=`<div class="hdet" id="hdet-${s.id}">`+Object.entries(s.log).filter(([k,e])=>e.sets&&e.sets.some(x=>x.d)).map(([k,e])=>
-        `<div class="hrow"><span>${esc(exName(k))}${e.rpe?` · RPE ${e.rpe}`:""}</span><span>${esc(setText(k,e.sets.filter(x=>x.d)))}</span></div>`).join("")
+        `<div class="hrow"><span>${esc(exName(k))}${prs.has(k)?'<span class="prtag">PR</span>':""}${e.rpe?` · RPE ${e.rpe}`:""}</span><span>${esc(setText(k,e.sets.filter(x=>x.d)))}</span></div>`).join("")
         +(s.notes?`<div class="hnote">${esc(s.notes)}</div>`:"")
-        +`<div class="hact"><button type="button" data-copy="${s.id}">Copy for Whoop</button><button type="button" data-del="${s.id}" class="${confirmDel===s.id?"danger":""}">${confirmDel===s.id?"Tap again to delete":"Delete"}</button></div></div>`;
+        +`<div class="hact"><button type="button" data-copy="${s.id}">Share to Whoop</button><button type="button" data-del="${s.id}" class="${confirmDel===s.id?"danger":""}">${confirmDel===s.id?"Tap again to delete":"Delete"}</button></div></div>`;
     }
     return `<div class="hitem"><button type="button" class="hsum" data-open="${s.id}" aria-expanded="${open}">
       <span class="date"><b>${d.getDate()}</b><span>${d.toLocaleDateString([], {month:"short"})}</span></span>
@@ -719,8 +746,8 @@ function renderPlan(){
     <div class="line"><span>This week is</span><select id="cycleSel">${[1,2,3,4].map(n=>`<option value="${n}"${n===wk?" selected":""}>Week ${n}${n===4?" (deload)":""}</option>`).join("")}</select></div>
     <div class="line"><span>Back to the original plan</span><button type="button" class="btn ghost small" id="planReset">Reset plan</button></div></div>
   <div class="settings"><h3>Backup</h3>
-    <p class="hint" style="text-align:left">Your log is stored on this phone only. Export a backup now and then, and import it on a new phone.</p>
-    <div class="line"><span>${sessions.size} sessions saved</span><button type="button" class="btn ghost small" id="exportBtn">Export backup</button></div>
+    <p class="hint" style="text-align:left">Your log is stored on this phone only. ${backupAge()==null?"No backup yet.":"Last backup: "+(backupAge()===0?"today":backupAge()+" days ago")+"."} Save backups to Google Drive or send them to yourself; the app reminds you every 2 weeks.</p>
+    <div class="line"><span>${sessions.size} sessions saved</span><button type="button" class="btn ghost small" id="exportBtn">Back up now</button></div>
     <div class="line"><span>Restore or merge a backup</span><button type="button" class="btn ghost small" id="importBtn">Import backup</button></div>
     <input type="file" id="importFile" accept=".json,application/json" hidden></div>`;
   $("#plan").innerHTML=h;
@@ -734,7 +761,20 @@ function beep(){
   try{if(!actx)return;const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=880;g.gain.value=.15;o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+.25);
     setTimeout(()=>{try{const o2=actx.createOscillator();o2.frequency.value=1175;o2.connect(g);o2.start();o2.stop(actx.currentTime+.3)}catch(e){}},300)}catch(e){}
 }
+let restLabel="";
+function notifyRest(title,body,loud){
+  if(!("Notification" in window)||Notification.permission!=="granted"||!navigator.serviceWorker)return;
+  navigator.serviceWorker.ready.then(r=>r.showNotification(title,{body,tag:"rest",renotify:!!loud,silent:!loud,icon:"icons/icon-192.png",badge:"icons/icon-192.png",vibrate:loud?[300,120,300,120,300]:undefined,requireInteraction:!!loud})).catch(()=>{});
+}
+function clearRestNote(){if(!navigator.serviceWorker)return;navigator.serviceWorker.ready.then(r=>r.getNotifications({tag:"rest"})).then(ns=>ns.forEach(n=>n.close())).catch(()=>{})}
+document.addEventListener("visibilitychange",()=>{
+  if($("#rest").hidden)return;
+  if(document.hidden){const left=restEnd-Date.now();if(left>0){const at=new Date(restEnd);notifyRest("Resting · "+restLabel,"Next set at "+at.getHours()+":"+pad(at.getMinutes())+":"+pad(at.getSeconds()),false)}}
+  else{clearRestNote();tickRest()}
+});
 function startRest(sec,label){
+  try{if("Notification" in window&&Notification.permission==="default"&&!lsLoad("gymlog.askedNotif",false)){lsPut("gymlog.askedNotif",true);Notification.requestPermission()}}catch(e){}
+  restLabel=label;
   try{if(!actx){const AC=window.AudioContext||window.webkitAudioContext;if(AC)actx=new AC()}actx&&actx.resume&&actx.resume()}catch(e){}
   restDur=sec||90; restEnd=Date.now()+restDur*1000; beeped=false;
   $("#restL").textContent="Rest · "+label; $("#rest").hidden=false; $("#rest").classList.remove("go");
@@ -745,9 +785,9 @@ function tickRest(){
   const el=$("#rest"), t=$("#restT"), bar=$("#restBar");
   if(left>0){t.textContent=Math.floor(left/60)+":"+pad(left%60);bar.style.transform=`scaleX(${Math.max(0,left/restDur)})`}
   else{const over=-left;el.classList.add("go");t.textContent="Go · +"+Math.floor(over/60)+":"+pad(over%60);bar.style.transform="scaleX(0)";
-    if(!beeped){beeped=true;beep()} if(over>300)stopRest()}
+    if(!beeped){beeped=true;beep();if(document.hidden)notifyRest("Rest over","Time for your next set: "+restLabel,true)} if(over>300)stopRest()}
 }
-function stopRest(){clearInterval(restInt);$("#rest").hidden=true}
+function stopRest(){clearInterval(restInt);$("#rest").hidden=true;clearRestNote()}
 $("#restX").addEventListener("click",stopRest);
 
 /* ---------- Rendering glue ---------- */
@@ -805,6 +845,9 @@ $("#train").addEventListener("click",e=>{
       if(x.r==null){const r=row.querySelector('[data-f="r"]');r&&r.focus();toast(it.ty==="t"?"Enter your time first.":"Enter your reps first.");return}
     }
     x.d=!x.d; chk.setAttribute("aria-pressed",x.d); chk.closest(".set").classList.toggle("isdone",x.d);
+    if(it.ty==="s"){const nEl=chk.closest(".set").querySelector(".n");const pr=x.d&&prFor(k,x.w,x.r,s.startedAt,s.id);
+      nEl.classList.toggle("pr",!!pr);nEl.textContent=pr?"PR":String(i+1);
+      if(pr){toast("New PR · "+exName(k)+" "+(pr==="weight"?fmt(x.w)+" kg":fmt(x.w)+" kg × "+fmt(x.r)));try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}}}
     chk.closest(".ex").classList.toggle("complete",entry(s,k).sets.every(y=>y.d));
     if(x.d){const allDone=entry(s,k).sets.every(y=>y.d);startRest(it.rest||90,allDone?"next exercise":exName(k))}
     scheduleSave(s,200); refreshHeaderBits(s); return;
@@ -817,7 +860,7 @@ $("#train").addEventListener("click",e=>{
   if(id==="backToSession"){finishCheck=false;const s=active[day];const m=missingItems(s);$("#finishbox").innerHTML=finishHtml(s,PROGRAM[day]);
     const first=[...document.querySelectorAll("#train .exname,#train .tick .t1")].find(n=>m.includes(n.textContent.replace(/^[A-Z]\d · /,"")));
     if(first)(first.closest(".ex")||first.closest(".tick")).scrollIntoView({behavior:"smooth",block:"center"});return}
-  if(id==="copyNow"){const s=active[day];if(s)copyText(whoopText(s),$("#finishbox"));return}
+  if(id==="copyNow"){const s=active[day];if(s)shareText(whoopText(s),$("#finishbox"));return}
   if(id==="reopen"){delete active[day];finishCheck=false;renderAll();window.scrollTo({top:0});return}
 });
 function doFinish(s){
@@ -831,7 +874,7 @@ function doFinish(s){
 /* ---------- Events: history ---------- */
 $("#history").addEventListener("click",e=>{
   const cp=e.target.closest("[data-copy]");
-  if(cp){const s=sessions.get(cp.dataset.copy);if(s)copyText(whoopText(s),cp.closest(".hdet"));return}
+  if(cp){const s=sessions.get(cp.dataset.copy);if(s)shareText(whoopText(s),cp.closest(".hdet"));return}
   const del=e.target.closest("[data-del]");
   if(del){if(confirmDel===del.dataset.del){confirmDel=null;removeSession(del.dataset.del)}else{confirmDel=del.dataset.del;renderHistory()}return}
   const o=e.target.closest("[data-open]");
@@ -878,13 +921,26 @@ $("#plan").addEventListener("change",e=>{
 window.addEventListener("pagehide",()=>{timers.forEach((t,id)=>{clearTimeout(t);flush(id)})});
 
 /* ---------- Backup ---------- */
+const LSB="gymlog.lastBackup";
+function backupAge(){const t=lsLoad(LSB,null);return t?Math.floor((Date.now()-t)/864e5):null}
+function markBackup(){lsPut(LSB,Date.now());renderAll()}
+async function backup(){
+  const data={app:"gym-log",version:1,exportedAt:new Date().toISOString(),config,sessions:[...sessions.values()]};
+  const name="gymlog-backup-"+todayStr()+".json";
+  const json=JSON.stringify(data,null,1);
+  try{
+    const file=new File([json],name,{type:"application/json"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      await navigator.share({files:[file],title:"Gym Log backup"});
+      markBackup();toast("Backup shared. Save it to Drive or send it to yourself.");return;
+    }
+  }catch(err){if(err&&err.name==="AbortError")return}
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));a.download=name;
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
+  markBackup();toast("Backup saved to Downloads.");
+}
 document.addEventListener("click",e=>{
-  if(e.target.id==="exportBtn"){
-    const data={app:"gym-log",version:1,exportedAt:new Date().toISOString(),config,sessions:[...sessions.values()]};
-    const blob=new Blob([JSON.stringify(data,null,1)],{type:"application/json"});
-    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="gymlog-backup-"+todayStr()+".json";
-    document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);toast("Backup exported.");
-  }
+  if(e.target.id==="exportBtn"||e.target.id==="backupNow")backup();
   if(e.target.id==="importBtn")$("#importFile").click();
 });
 document.addEventListener("change",async e=>{
